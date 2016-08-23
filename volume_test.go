@@ -185,7 +185,7 @@ func TestCopyVolume(*testing.T) {
 
 func TestExportVolume(*testing.T) {
 	// TODO: Make this more robust
-	err := client.ExportVolume("testing")
+	_, err := client.ExportVolume("testing")
 	if err != nil {
 		panic(err)
 	}

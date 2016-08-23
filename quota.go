@@ -8,7 +8,7 @@ type Quota *papi.IsiQuota
 
 // GetQuota returns a specific quota by path
 func (c *Client) GetQuota(name string) (Quota, error) {
-	quota, err := c.api.GetIsiQuota(c.Path(name))
+	quota, err := c.API.GetIsiQuota(c.Path(name))
 	if err != nil {
 		return nil, err
 	}
@@ -20,18 +20,18 @@ func (c *Client) GetQuota(name string) (Quota, error) {
 
 // SetQuota sets the max size (hard threshold) of a quota for a volume
 func (c *Client) SetQuotaSize(name string, size int64) error {
-	err := c.api.SetIsiQuotaHardThreshold(c.Path(name), size)
+	err := c.API.SetIsiQuotaHardThreshold(c.Path(name), size)
 	return err
 }
 
 // UpdateQuota modifies the max size (hard threshold) of a quota for a volume
 func (c *Client) UpdateQuotaSize(name string, size int64) error {
-	err := c.api.UpdateIsiQuotaHardThreshold(c.Path(name), size)
+	err := c.API.UpdateIsiQuotaHardThreshold(c.Path(name), size)
 	return err
 }
 
 // ClearQuota removes the quota from a volume
 func (c *Client) ClearQuota(name string) error {
-	err := c.api.DeleteIsiQuota(c.Path(name))
+	err := c.API.DeleteIsiQuota(c.Path(name))
 	return err
 }

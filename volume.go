@@ -18,7 +18,7 @@ func (c *Client) GetVolume(id string, name string) (Volume, error) {
 	if id != "" {
 		name = id
 	}
-	volume, err := c.api.GetIsiVolume(name)
+	volume, err := c.API.GetIsiVolume(name)
 	if err != nil {
 		return nil, err
 	}
@@ -28,7 +28,7 @@ func (c *Client) GetVolume(id string, name string) (Volume, error) {
 
 //GetVolumes returns a list of volumes
 func (c *Client) GetVolumes() ([]Volume, error) {
-	volumes, err := c.api.GetIsiVolumes()
+	volumes, err := c.API.GetIsiVolumes()
 	if err != nil {
 		return nil, err
 	}
@@ -42,7 +42,7 @@ func (c *Client) GetVolumes() ([]Volume, error) {
 
 //CreateVolume creates a volume
 func (c *Client) CreateVolume(name string) (Volume, error) {
-	_, err := c.api.CreateIsiVolume(name)
+	_, err := c.API.CreateIsiVolume(name)
 	if err != nil {
 		return nil, err
 	}
@@ -53,13 +53,13 @@ func (c *Client) CreateVolume(name string) (Volume, error) {
 
 //DeleteVolume deletes a volume
 func (c *Client) DeleteVolume(name string) error {
-	_, err := c.api.DeleteIsiVolume(name)
+	_, err := c.API.DeleteIsiVolume(name)
 	return err
 }
 
 //CopyVolume creates a volume based on an existing volume
 func (c *Client) CopyVolume(source_name, destination_name string) (Volume, error) {
-	_, err := c.api.CopyIsiVolume(source_name, destination_name)
+	_, err := c.API.CopyIsiVolume(source_name, destination_name)
 	if err != nil {
 		return nil, err
 	}
@@ -69,11 +69,11 @@ func (c *Client) CopyVolume(source_name, destination_name string) (Volume, error
 
 //Path returns the path to a volume
 func (c *Client) Path(name string) string {
-	return fmt.Sprintf("%s/%s", c.api.VolumePath, name)
+	return fmt.Sprintf("%s/%s", c.API.VolumePath, name)
 }
 
 //ExportVolume exports a volume
-func (c *Client) ExportVolume(name string) error {
+func (c *Client) ExportVolume(name string) (int, error) {
 	return c.Export(name)
 }
 
@@ -84,7 +84,7 @@ func (c *Client) UnexportVolume(name string) error {
 
 //GetVolumeExports return a list of volume exports
 func (c *Client) GetVolumeExports() ([]*VolumeExport, error) {
-	exports, err := c.GetIsiExports()
+	exports, err := c.GetExports()
 	if err != nil {
 		return nil, err
 	}
@@ -92,9 +92,9 @@ func (c *Client) GetVolumeExports() ([]*VolumeExport, error) {
 	exportPaths := make(map[string]bool)
 	exportClients := make(map[string]([]string))
 	for _, export := range exports {
-		for _, path := range export.Paths {
+		for _, path := range *export.Paths {
 			exportPaths[path] = true
-			exportClients[path] = export.Clients
+			exportClients[path] = *export.Clients
 		}
 	}
 

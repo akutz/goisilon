@@ -1,6 +1,7 @@
 package apiv1
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -15,16 +16,18 @@ var (
 	QuotaPath           = "platform/1/quota/quotas"
 	SnapshotsPath       = "platform/1/snapshot/snapshots"
 	VolumeSnapshotsPath = "/ifs/.snapshot"
-)
 
-var debug bool
+	Enabled  = true
+	Disabled = false
 
-// HACK: this seems kinda fragile.  would probably be better if the caller kept track of the Id.
-var exportId int
+	contentTypeJSONHeader = map[string]string{
+		"Content-Type": "application/json",
+	}
 
-func init() {
 	debug, _ = strconv.ParseBool(os.Getenv("GOISILON_DEBUG"))
-}
+
+	colonBytes = []byte{byte(':')}
+)
 
 type IsiVolume struct {
 	Name         string `json:"name"`
@@ -81,6 +84,87 @@ type ExportClientList struct {
 // Isi PAPI export Id JSON struct
 type postIsiExportResp struct {
 	Id int `json:"id"`
+}
+
+// Export is an Isilon Export.
+type Export struct {
+	ID          int          `json:"-"`
+	Paths       *[]string    `json:"paths,omitempty"`
+	Clients     *[]string    `json:"clients,omitempty"`
+	RootClients *[]string    `json:"root_clients,omitempty"`
+	MapAll      *UserMapping `json:"map_all,omitempty"`
+	MapNonRoot  *UserMapping `json:"map_non_root,omitempty"`
+	MapRoot     *UserMapping `json:"map_root,omitempty"`
+}
+
+type export struct {
+	ID          *int         `json:"id,omitempty"`
+	Paths       *[]string    `json:"paths,omitempty"`
+	Clients     *[]string    `json:"clients,omitempty"`
+	RootClients *[]string    `json:"root_clients,omitempty"`
+	MapAll      *UserMapping `json:"map_all,omitempty"`
+	MapNonRoot  *UserMapping `json:"map_non_root,omitempty"`
+	MapRoot     *UserMapping `json:"map_root,omitempty"`
+}
+
+func isNilUserMapping(um *UserMapping) bool {
+	return um == nil || (um.Enabled == nil && um.PrimaryGroup == nil &&
+		um.SecondaryGroup == nil && um.User == nil)
+}
+
+// UnmarshalJSON unmarshals a Export from JSON.
+func (e *Export) UnmarshalJSON(data []byte) error {
+
+	if isEmptyJSON(&data) {
+		return nil
+	}
+
+	var pe export
+	if err := json.Unmarshal(data, &pe); err != nil {
+		return nil
+	}
+
+	if pe.ID != nil {
+		e.ID = *pe.ID
+	}
+	e.Paths = pe.Paths
+	e.Clients = pe.Clients
+	e.RootClients = pe.RootClients
+
+	if !isNilUserMapping(pe.MapAll) {
+		e.MapAll = pe.MapAll
+	}
+	if !isNilUserMapping(pe.MapNonRoot) {
+		e.MapNonRoot = pe.MapNonRoot
+	}
+	if !isNilUserMapping(pe.MapRoot) {
+		e.MapRoot = pe.MapRoot
+	}
+
+	return nil
+}
+
+// ExportList is a list of Isilon Exports.
+type ExportList []*Export
+
+// MarshalJSON marshals an ExportList to JSON.
+func (l ExportList) MarshalJSON() ([]byte, error) {
+	exports := struct {
+		Exports []*Export `json:"exports,omitempty"`
+	}{l}
+	return json.Marshal(exports)
+}
+
+// UnmarshalJSON unmarshals an ExportList from JSON.
+func (l *ExportList) UnmarshalJSON(text []byte) error {
+	exports := struct {
+		Exports []*Export `json:"exports,omitempty"`
+	}{}
+	if err := json.Unmarshal(text, &exports); err != nil {
+		return err
+	}
+	*l = exports.Exports
+	return nil
 }
 
 // Isi PAPI export attributes JSON structs
@@ -179,6 +263,315 @@ type IsiUpdateQuotaReq struct {
 
 type isiQuotaListResp struct {
 	Quotas []IsiQuota `json:"quotas"`
+}
+
+// UserMapping maps to the ISI <user-mapping> type.
+type UserMapping struct {
+	Enabled        *bool      `json:"enabled,omitempty"`
+	User           *Persona   `json:"user,omitempty"`
+	PrimaryGroup   *Persona   `json:"primary_group,omitempty"`
+	SecondaryGroup []*Persona `json:"secondary_group,omitempty"`
+}
+
+type userMapping struct {
+	Enabled        *bool      `json:"enabled,omitempty"`
+	User           *Persona   `json:"user,omitempty"`
+	PrimaryGroup   *Persona   `json:"primary_group,omitempty"`
+	SecondaryGroup []*Persona `json:"secondary_group,omitempty"`
+}
+
+func isNilPersona(p *Persona) bool {
+	return p == nil || (p.ID == nil && p.Name == nil && p.Type == nil)
+}
+
+// UnmarshalJSON unmarshals a UserMapping from JSON.
+func (um *UserMapping) UnmarshalJSON(data []byte) error {
+
+	if isEmptyJSON(&data) {
+		return nil
+	}
+
+	var pum userMapping
+	if err := json.Unmarshal(data, &pum); err != nil {
+		return nil
+	}
+
+	if pum.Enabled != nil {
+		um.Enabled = pum.Enabled
+	}
+	if !isNilPersona(pum.User) {
+		um.User = pum.User
+	}
+	if !isNilPersona(pum.PrimaryGroup) {
+		um.PrimaryGroup = pum.PrimaryGroup
+	}
+	if len(pum.SecondaryGroup) > 0 {
+		um.SecondaryGroup = pum.SecondaryGroup
+	}
+
+	return nil
+}
+
+func isEmptyJSON(data *[]byte) bool {
+	d := *data
+	return len(d) == 2 && d[0] == '{' && d[1] == '}'
+}
+
+// Persona maps to the ISI <persona> type.
+type Persona struct {
+	ID   *PersonaID   `json:"id,omitempty"`
+	Type *PersonaType `json:"type,omitempty"`
+	Name *string      `json:"name,omitempty"`
+}
+
+type personaWithID struct {
+	ID *PersonaID `json:"id,omitempty"`
+}
+
+// MarshalJSON marshals a Persona to JSON.
+func (p *Persona) MarshalJSON() ([]byte, error) {
+	if p.ID != nil {
+		return json.Marshal(personaWithID{p.ID})
+	} else if p.Type != nil && p.Name != nil {
+		return json.Marshal(fmt.Sprintf("%s:%s", *p.Type, *p.Name))
+	} else if p.Name != nil {
+		return json.Marshal(*p.Name)
+	}
+	return nil, fmt.Errorf("persona cannot be marshaled to json: %+v", p)
+}
+
+// UnmarshalJSON unmarshals a Persona from JSON.
+func (p *Persona) UnmarshalJSON(data []byte) error {
+
+	if isEmptyJSON(&data) {
+		return nil
+	}
+
+	var pid personaWithID
+	if err := json.Unmarshal(data, &pid); err == nil {
+		if pid.ID != nil {
+			p.ID = pid.ID
+			return nil
+		}
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 1 {
+		p.Name = &parts[0]
+		return nil
+	}
+
+	pt := ParsePersonaType(parts[0])
+	p.Type = &pt
+	p.Name = &parts[1]
+	return nil
+}
+
+// PersonaID maps to the ISI <persona-id> type.
+type PersonaID struct {
+	ID   string
+	Type PersonaIDType
+}
+
+// MarshalJSON marshals a PersonaID to JSON.
+func (p *PersonaID) MarshalJSON() ([]byte, error) {
+	if p.Type == PersonaIDTypeUnknown {
+		return json.Marshal(p.ID)
+	}
+	return json.Marshal(fmt.Sprintf("%s:%s", p.Type, p.ID))
+}
+
+// UnmarshalJSON unmarshals a PersonaID from JSON.
+func (p *PersonaID) UnmarshalJSON(data []byte) error {
+
+	if isEmptyJSON(&data) {
+		return nil
+	}
+
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	parts := strings.SplitN(s, ":", 2)
+	if len(parts) == 1 {
+		p.ID = parts[0]
+		return nil
+	}
+
+	p.Type = ParsePersonaIDType(parts[0])
+	p.ID = parts[1]
+	return nil
+}
+
+// PersonaIDType is a valid Persona ID type.
+type PersonaIDType uint8
+
+const (
+	// PersonaIDTypeUnknown is an unknown PersonaID type.
+	PersonaIDTypeUnknown PersonaIDType = iota
+
+	// PersonaIDTypeUser is a PersonaID user type.
+	PersonaIDTypeUser
+
+	// PersonaIDTypeGroup is a PersonaID group type.
+	PersonaIDTypeGroup
+
+	// PersonaIDTypeSID is a PersonaID SID type.
+	PersonaIDTypeSID
+
+	// PersonaIDTypeUID is a PersonaID UID type.
+	PersonaIDTypeUID
+
+	// PersonaIDTypeGID is a PersonaID GID type.
+	PersonaIDTypeGID
+
+	personaIDTypeCount
+)
+
+const (
+	personaIDTypeUnknownStr = "unknown"
+	personaIDTypeUserStr    = "user"
+	personaIDTypeGroupStr   = "group"
+	personaIDTypeSIDStr     = "SID"
+	personaIDTypeUIDStr     = "UID"
+	personaIDTypeGIDStr     = "GID"
+)
+
+var personaIDTypesToStrs = [personaIDTypeCount]string{
+	personaIDTypeUnknownStr,
+	personaIDTypeUserStr,
+	personaIDTypeGroupStr,
+	personaIDTypeSIDStr,
+	personaIDTypeUIDStr,
+	personaIDTypeGIDStr,
+}
+
+// ParsePersonaIDType parses a PersonaIDType from a string.
+func ParsePersonaIDType(text string) PersonaIDType {
+	switch {
+	case strings.EqualFold(text, personaIDTypeUserStr):
+		return PersonaIDTypeUser
+	case strings.EqualFold(text, personaIDTypeGroupStr):
+		return PersonaIDTypeGroup
+	case strings.EqualFold(text, personaIDTypeSIDStr):
+		return PersonaIDTypeSID
+	case strings.EqualFold(text, personaIDTypeUIDStr):
+		return PersonaIDTypeUID
+	case strings.EqualFold(text, personaIDTypeGIDStr):
+		return PersonaIDTypeGID
+	}
+	return PersonaIDTypeUnknown
+}
+
+// String returns the string representation of a PersonaIDType value.
+func (p PersonaIDType) String() string {
+	if p < (PersonaIDTypeUnknown+1) || p >= personaIDTypeCount {
+		return personaIDTypesToStrs[PersonaIDTypeUnknown]
+	}
+	return personaIDTypesToStrs[p]
+}
+
+// MarshalJSON marshals a PersonaIDType value to JSON.
+func (p PersonaIDType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+// UnmarshalJSON unmarshals a PersonaIDType value from JSON.
+func (p *PersonaIDType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*p = ParsePersonaIDType(s)
+	return nil
+}
+
+// PersonaType is a valid Persona type.
+type PersonaType uint8
+
+const (
+	// PersonaTypeUnknown is an unknown Persona type.
+	PersonaTypeUnknown PersonaType = iota
+
+	// PersonaIDTypeUser is a Persona user type.
+	PersonaTypeUser
+
+	// PersonaTypeGroup is a Persona group type.
+	PersonaTypeGroup
+
+	// PersonaTypeWellKnown is a Persona wellknown type.
+	PersonaTypeWellKnown
+
+	personaTypeCount
+)
+
+var (
+	// PPersonaIDTypeUnknown is used to get adddress of the constant.
+	PPersonaTypeUnknown = PersonaTypeUnknown
+
+	// PPersonaTypeUser is used to get adddress of the constant.
+	PPersonaTypeUser = PersonaTypeUser
+
+	// PPersonaTypeGroup is used to get adddress of the constant.
+	PPersonaTypeGroup = PersonaTypeGroup
+
+	// PPersonaTypeWellKnown is used to get adddress of the constant.
+	PPersonaTypeWellKnown = PersonaTypeWellKnown
+)
+
+const (
+	personaTypeUnknownStr   = "unknown"
+	personaTypeUserStr      = "user"
+	personaTypeGroupStr     = "group"
+	personaTypeWellKnownStr = "wellknown"
+)
+
+var personaTypesToStrs = [personaTypeCount]string{
+	personaTypeUnknownStr,
+	personaTypeUserStr,
+	personaTypeGroupStr,
+	personaTypeWellKnownStr,
+}
+
+// ParsePersonaType parses a PersonaType from a string.
+func ParsePersonaType(text string) PersonaType {
+	switch {
+	case strings.EqualFold(text, personaTypeUserStr):
+		return PersonaTypeUser
+	case strings.EqualFold(text, personaTypeGroupStr):
+		return PersonaTypeGroup
+	case strings.EqualFold(text, personaTypeWellKnownStr):
+		return PersonaTypeWellKnown
+	}
+	return PersonaTypeUnknown
+}
+
+// String returns the string representation of a PersonaType value.
+func (p PersonaType) String() string {
+	if p < (PersonaTypeUnknown+1) || p >= personaTypeCount {
+		return personaTypesToStrs[PersonaTypeUnknown]
+	}
+	return personaTypesToStrs[p]
+}
+
+// MarshalJSON marshals a PersonaType value to JSON.
+func (p PersonaType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(p.String())
+}
+
+// UnmarshalJSON marshals a PersonaType value from JSON.
+func (p *PersonaType) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	*p = ParsePersonaType(s)
+	return nil
 }
 
 // GetIsiQuota queries the quota for a directory
@@ -338,63 +731,129 @@ func (papi *PapiConnection) CopyIsiVolume(sourceName, destinationName string) (r
 	return resp, err
 }
 
-// Export enables an NFS export on the cluster to access the volumes.  Return the path to the export
-// so other processes can mount the volume directory
-func (papi *PapiConnection) Export(path string) (err error) {
-	// PAPI call: POST https://1.2.3.4:8080/platform/1/protocols/nfs/exports/
-	//            Content-Type: application/json
-	//            {paths: ["/path/to/volume"]}
-
-	if path == "" {
-		return errors.New("no path set")
-	}
-
-	var data = &ExportPathList{Paths: []string{path}}
-	data.MapAll.User = papi.username
-	if papi.group != "" {
-		data.MapAll.Groups = append(data.MapAll.Groups, papi.group)
-	}
-	headers := map[string]string{"Content-Type": "application/json"}
-	var resp *postIsiExportResp
-
-	err = papi.queryWithHeaders("POST", ExportsPath, "", nil, headers, data, &resp)
-
-	if err != nil {
-		return err
-	}
-
-	return nil
+// Export creates an NFS export for a volume with the provided name.
+func (papi *PapiConnection) Export(path string) (int, error) {
+	return papi.ExportCreate(&Export{Paths: &([]string{path})})
 }
 
-// SetExportClients limits access to an NFS export on the cluster to a specific client address.
-func (papi *PapiConnection) SetExportClients(Id int, clients []string) (err error) {
-	// PAPI call: PUT https://1.2.3.4:8080/platform/1/protocols/nfs/exports/Id
-	//            Content-Type: application/json
-	//            {clients: ["client_ip_address"]}
+// ExportList GETs all exports.
+func (papi *PapiConnection) ExportsList() ([]*Export, error) {
+	// GET https://1.2.3.4:8080/platform/1/protocols/nfs/exports
 
-	var data = &ExportClientList{Clients: clients}
-	headers := map[string]string{"Content-Type": "application/json"}
-	var resp *postIsiExportResp
+	var resp ExportList
 
-	err = papi.queryWithHeaders("PUT", ExportsPath, strconv.Itoa(Id), nil, headers, data, &resp)
+	if err := papi.queryWithHeaders(
+		"GET",
+		ExportsPath,
+		"",
+		nil,
+		contentTypeJSONHeader,
+		nil,
+		&resp); err != nil {
 
-	return err
-}
-
-// Unexport disables the NFS export on the cluster that points to the volumes directory.
-func (papi *PapiConnection) Unexport(Id int) (err error) {
-	// PAPI call: DELETE https://1.2.3.4:8080/platform/1/protocols/nfs/exports/23
-
-	if Id == 0 {
-		return errors.New("no path Id set")
+		return nil, err
 	}
 
-	exportPath := fmt.Sprintf("%s/%d", ExportsPath, Id)
+	return resp, nil
+}
 
-	var resp postIsiExportResp
-	err = papi.queryWithHeaders("DELETE", exportPath, "", nil, nil, nil, &resp)
+// ExportInspect GETs an export.
+func (papi *PapiConnection) ExportInspect(id int) (*Export, error) {
+	// GET https://1.2.3.4:8080/platform/1/protocols/nfs/exports/{id}
 
-	return err
+	var resp ExportList
+
+	if err := papi.queryWithHeaders(
+		"GET",
+		ExportsPath,
+		strconv.Itoa(id),
+		nil,
+		contentTypeJSONHeader,
+		nil,
+		&resp); err != nil {
+
+		return nil, err
+	}
+
+	if len(resp) == 0 {
+		return nil, nil
+	}
+
+	return resp[0], nil
+}
+
+// ExportCreate POSTs an Export object to the Isilon server.
+func (papi *PapiConnection) ExportCreate(export *Export) (int, error) {
+	// POST https://1.2.3.4:8080/platform/1/protocols/nfs/exports
+	// Content-Type: application/json
+	// json.Marshal(export)
+
+	if export.Paths != nil && len(*export.Paths) == 0 {
+		return 0, errors.New("no path set")
+	}
+
+	var resp Export
+
+	if err := papi.queryWithHeaders(
+		"POST",
+		ExportsPath,
+		"",
+		nil,
+		contentTypeJSONHeader,
+		export,
+		&resp); err != nil {
+
+		return 0, err
+	}
+
+	return resp.ID, nil
+}
+
+// ExportUpdate PUTs an Export object to the Isilon server.
+func (papi *PapiConnection) ExportUpdate(export *Export) error {
+	// PUT https://1.2.3.4:8080/platform/1/protocols/nfs/exports/{id}
+	// Content-Type: application/json
+	// json.Marshal(export)
+	return papi.queryWithHeaders(
+		"PUT",
+		ExportsPath,
+		strconv.Itoa(export.ID),
+		nil,
+		contentTypeJSONHeader,
+		export,
+		nil)
+}
+
+// ExportDELETE DELETEs an Export object on the Isilon server.
+func (papi *PapiConnection) ExportDelete(id int) error {
+	// DELETE https://1.2.3.4:8080/platform/1/protocols/nfs/exports/{id}
+	return papi.queryWithHeaders(
+		"DELETE",
+		ExportsPath,
+		strconv.Itoa(id),
+		nil,
+		nil,
+		nil,
+		nil)
+}
+
+// SetExportClients sets an Export's clients property.
+func (papi *PapiConnection) SetExportClients(
+	id int, addrs ...string) error {
+
+	return papi.ExportUpdate(&Export{ID: id, Clients: &addrs})
+}
+
+// SetExportRootClients sets an Export's root_clients property.
+func (papi *PapiConnection) SetExportRootClients(
+	id int, addrs ...string) error {
+
+	return papi.ExportUpdate(&Export{ID: id, RootClients: &addrs})
+}
+
+// Unexport deletes the NFS export.
+func (papi *PapiConnection) Unexport(id int) error {
+	return papi.ExportDelete(id)
 }
 
 func (papi *PapiConnection) nameSpacePath() string {

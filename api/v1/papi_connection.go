@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 )
@@ -99,37 +100,51 @@ func (xms *PapiConnection) query(method string, path string, id string,
 }
 
 // Send an HTTP query that includes headers to the cluster
-func (xms *PapiConnection) queryWithHeaders(method string, path string, id string,
-	params map[string]string, headers map[string]string, body interface{},
+func (xms *PapiConnection) queryWithHeaders(
+	method, path, id string,
+	params map[string]string,
+	headers map[string]string,
+	body interface{},
 	resp interface{}) error {
 
+	var (
+		err error
+		url string
+		req *http.Request
+		res *http.Response
+	)
+
 	// build the URI
-	endpoint := fmt.Sprintf("%s/%s", xms.endpoint, path)
-	if id != "" {
-		endpoint = fmt.Sprintf("%s/%s", endpoint, id)
+	if id == "" {
+		url = fmt.Sprintf("%s/%s", xms.endpoint, path)
+	} else {
+		url = fmt.Sprintf("%s/%s/%s", xms.endpoint, path, id)
 	}
 
 	// add parameters to the URI
 	encodedParams := multimap(params).Encode()
 	if encodedParams != "" {
-		endpoint = fmt.Sprintf("%s?%s", endpoint, encodedParams)
+		url = fmt.Sprintf("%s?%s", url, encodedParams)
 	}
 
 	// marshal the message body (assumes json format)
-	var byteBuffer bytes.Buffer
 	if body != nil {
-		var bodyBytes []byte
-		bodyBytes, _ = json.Marshal(body)
-		byteBuffer.Write(bodyBytes)
+		buf := &bytes.Buffer{}
+		enc := json.NewEncoder(buf)
+		if err = enc.Encode(body); err != nil {
+			return err
+		}
+		req, err = http.NewRequest(method, url, buf)
+	} else {
+		req, err = http.NewRequest(method, url, nil)
 	}
 
-	req, err := http.NewRequest(method, endpoint, &byteBuffer)
 	if err != nil {
 		return err
 	}
 
 	// add headers to the request
-	if headers != nil {
+	if len(headers) > 0 {
 		for header, value := range headers {
 			req.Header.Add(header, value)
 		}
@@ -138,26 +153,28 @@ func (xms *PapiConnection) queryWithHeaders(method string, path string, id strin
 	// set the username and password
 	req.SetBasicAuth(xms.username, xms.password)
 
+	logRequest(req)
+
 	// send the request
-	r, err := xms.httpClient.Do(req)
-	if err != nil {
+	if res, err = xms.httpClient.Do(req); err != nil {
 		return err
 	}
-	defer r.Body.Close()
+	defer res.Body.Close()
+
+	logResponse(res)
 
 	// parse the response
 	switch {
-	case resp == nil:
+	case res == nil:
 		return nil
-	case r.StatusCode >= 200 && r.StatusCode <= 299:
-		decoder := json.NewDecoder(r.Body)
-		if decoder.More() {
-			err = decoder.Decode(resp)
+	case res.StatusCode >= 200 && res.StatusCode <= 299:
+		dec := json.NewDecoder(res.Body)
+		if err = dec.Decode(resp); err != nil && err != io.EOF {
 			return err
 		}
-		return nil
 	default:
-		return buildError(r)
+		return buildError(res)
 	}
 
+	return nil
 }

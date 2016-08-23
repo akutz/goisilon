@@ -27,7 +27,8 @@ func VolumeSnapshotsPath(p string) {
 }
 
 type Client1 struct {
-	api *papi.PapiConnection
+	// API is the underlying API.
+	API *papi.PapiConnection
 }
 
 type Client Client1

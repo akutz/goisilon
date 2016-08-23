@@ -3,15 +3,16 @@ package goisilon
 import (
 	"errors"
 	"fmt"
-	papi "github.com/emccode/goisilon/api/v1"
 	"strings"
+
+	papi "github.com/emccode/goisilon/api/v1"
 )
 
 type SnapshotList []*papi.IsiSnapshot
 type Snapshot *papi.IsiSnapshot
 
 func (c *Client) GetSnapshots() (SnapshotList, error) {
-	snapshots, err := c.api.GetIsiSnapshots()
+	snapshots, err := c.API.GetIsiSnapshots()
 	if err != nil {
 		return nil, err
 	}
@@ -20,7 +21,7 @@ func (c *Client) GetSnapshots() (SnapshotList, error) {
 }
 
 func (c *Client) GetSnapshotsByPath(path string) (SnapshotList, error) {
-	snapshots, err := c.api.GetIsiSnapshots()
+	snapshots, err := c.API.GetIsiSnapshots()
 	if err != nil {
 		return nil, err
 	}
@@ -36,7 +37,7 @@ func (c *Client) GetSnapshotsByPath(path string) (SnapshotList, error) {
 
 func (c *Client) GetSnapshot(id int64, name string) (Snapshot, error) {
 	// if we have an id, use it to find the snapshot
-	snapshot, err := c.api.GetIsiSnapshot(id)
+	snapshot, err := c.API.GetIsiSnapshot(id)
 	if err == nil {
 		return snapshot, nil
 	}
@@ -61,7 +62,7 @@ func (c *Client) GetSnapshot(id int64, name string) (Snapshot, error) {
 }
 
 func (c *Client) CreateSnapshot(path, name string) (Snapshot, error) {
-	return c.api.CreateIsiSnapshot(c.Path(path), name)
+	return c.API.CreateIsiSnapshot(c.Path(path), name)
 }
 
 func (c *Client) RemoveSnapshot(id int64, name string) error {
@@ -70,7 +71,7 @@ func (c *Client) RemoveSnapshot(id int64, name string) error {
 		return err
 	}
 
-	return c.api.RemoveIsiSnapshot(snapshot.Id)
+	return c.API.RemoveIsiSnapshot(snapshot.Id)
 }
 
 func (c *Client) CopySnapshot(sourceId int64, sourceName, destinationName string) (Volume, error) {
@@ -82,7 +83,7 @@ func (c *Client) CopySnapshot(sourceId int64, sourceName, destinationName string
 		return nil, errors.New(fmt.Sprintf("Snapshot doesn't exist: (%d, %s)", sourceId, sourceName))
 	}
 
-	_, err = c.api.CopyIsiSnapshot(snapshot.Name, c.NameFromPath(snapshot.Path), destinationName)
+	_, err = c.API.CopyIsiSnapshot(snapshot.Name, c.NameFromPath(snapshot.Path), destinationName)
 	if err != nil {
 		return nil, err
 	}
